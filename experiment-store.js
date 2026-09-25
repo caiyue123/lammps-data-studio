@@ -1,0 +1,9 @@
+(function(root){
+'use strict';
+const DB='molecular-studio.experiments.v1';
+function open(factory){return new Promise((resolve,reject)=>{if(!factory){reject(new Error('浏览器不支持本机实验库，请下载完整实验文件。'));return}const r=factory.open(DB,1);r.onupgradeneeded=()=>{const db=r.result;db.createObjectStore('records',{keyPath:'id'});db.createObjectStore('heads',{keyPath:'id'})};r.onerror=()=>reject(new Error('无法打开本机实验库，请下载完整实验文件。'));r.onblocked=()=>reject(new Error('实验库被另一页面占用，请关闭旧页面后重试。'));r.onsuccess=()=>{r.result.onversionchange=()=>r.result.close();resolve(r.result)}})}
+function get(db,id){return new Promise((resolve,reject)=>{const r=db.transaction('records').objectStore('records').get(id);r.onsuccess=()=>resolve(r.result?.doc??null);r.onerror=()=>reject(r.error)})}
+function list(db){return new Promise((resolve,reject)=>{const r=db.transaction('heads').objectStore('heads').getAll();r.onsuccess=()=>resolve(r.result.sort((a,b)=>b.savedAt.localeCompare(a.savedAt)));r.onerror=()=>reject(r.error)})}
+function write(db,doc,head,expected){return new Promise((resolve,reject)=>{const tx=db.transaction(['records','heads'],'readwrite'),records=tx.objectStore('records');let issue=null;const r=records.get(head.id);r.onsuccess=()=>{const prior=r.result?.revision??null;if(prior!==expected){issue=new Error('这个实验已被另一页面更新，未覆盖它。请点击“另存为副本”保留本页，再打开最新版本；也可以下载备份。');tx.abort();return}if(doc.experiment.revision!==(expected===null?1:expected+1)){issue=new Error('实验版本顺序无效。');tx.abort();return}records.put({id:head.id,revision:head.revision,doc});tx.objectStore('heads').put(head)};tx.oncomplete=()=>resolve(head);tx.onabort=tx.onerror=()=>reject(issue||tx.error||new Error('本机实验保存失败，可能空间不足；请下载完整实验。'))})}
+const api={DB,open,get,list,write};if(typeof module!=='undefined')module.exports=api;else root.ExperimentStore=api;
+})(typeof window!=='undefined'?window:globalThis);
